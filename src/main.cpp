@@ -517,12 +517,38 @@ void setupDisplayAndFonts() {
   Serial.printf("[%lu] [   ] Fonts setup\n", millis());
 }
 
+// HWCDC::read/peek/available already use a 0-tick queue op, but Stream's
+// default timeout is 1000 ms. Pin it to 0 so no USB read on this port can
+// wait.
+//
+// HWCDC::write is what freezes the panel. The default TX timeout is 100 ms
+// and it is restarted whenever the host accepts a byte. A page-turner that
+// holds CDC open fills the 256-byte TX ring; every Serial.printf then stalls
+// loop(). delay() inside the driver feeds the task watchdog, so the device
+// sits there with the last e-ink frame instead of rebooting.
+//
+// Timeout must not be 0. The TX ring is a byte buffer, and
+// xRingbufferSend() of 0 bytes returns pdTRUE without making progress.
+// HWCDC::write treats that as success and decrements a try counter that
+// started at 0, which underflows, so the wait never ends. 1 ms is the
+// shortest timeout that still fails the try counter and returns.
+static void ensureUsbSerialNonBlocking() {
+  static bool configured = false;
+  if (configured) {
+    return;
+  }
+  configured = true;
+  Serial.setTimeout(0);
+  Serial.setTxTimeoutMs(1);
+}
+
 void setup() {
   // USB CDC (USB-Serial/JTAG), 115200 8N1. Baud is advisory on CDC; the host
   // still opens the port at 115200. Page-turn bytes share this port with logs.
   // begin() is not gated on ENABLE_SERIAL_LOG, so slim builds still accept
   // 'n' / 'p'.
   Serial.begin(115200);
+  ensureUsbSerialNonBlocking();
   delay(500);
   Serial.printf("[%lu] [DBG] setup() start - FIRMWARE DEBUG BUILD 001\n", millis());
   Serial.flush();
@@ -534,6 +560,7 @@ void setup() {
   // Only start serial if USB connected
   if (gpio.isUsbConnected()) {
     Serial.begin(115200);
+    ensureUsbSerialNonBlocking();
     // Wait up to 3 seconds for Serial to be ready to catch early logs
     unsigned long start = millis();
     while (!Serial && (millis() - start) < 3000) {
@@ -616,9 +643,18 @@ void setup() {
 
 // USB CDC page-turn. Companion sends raw bytes at 115200 8N1:
 // 'n'/'N' next page, 'p'/'P' previous page. A trailing CR/LF is ignored.
-// Repeats inside the debounce window are drained and dropped so a burst
+// Repeats inside the debounce window are consumed and dropped so a burst
 // cannot queue extra turns while the panel is busy refreshing.
 static constexpr unsigned long USB_PAGE_TURN_DEBOUNCE_MS = 250;
+// Bytes already sitting in the RX queue that we will handle this loop.
+// HWCDC's RX queue is 256 bytes; staying well under that keeps one loop
+// iteration off the e-ink refresh. Never read past available().
+static constexpr int USB_PAGE_TURN_MAX_BYTES_PER_LOOP = 32;
+// A non-command byte starts a text line (log echo, serial monitor). Drop
+// that line so letters inside it are not page turns. Do not wait for the
+// newline: if it never arrives, give up after this many bytes so a stray
+// byte cannot mute page turns for the rest of the session.
+static constexpr uint8_t USB_PAGE_TURN_MAX_DISCARD = 64;
 
 // Side-button index MappedInputManager uses for PageForward / PageBack.
 // Same table as kSideLayouts in src/MappedInputManager.cpp.
@@ -633,33 +669,51 @@ static uint8_t usbPageTurnButton(bool forward) {
 static void pollUsbSerialPageTurn() {
   static unsigned long lastInjectMs = 0;
   static bool haveInjected = false;
+  static bool discardingLine = false;
+  static uint8_t discarded = 0;
   bool injected = false;
 
-  // Bound the drain so a flooded CDC RX buffer cannot stall the UI loop.
-  for (int budget = 64; budget > 0 && Serial.available() > 0; --budget) {
-    const int raw = Serial.peek();
+  ensureUsbSerialNonBlocking();
+
+  // available() is a queue count (or -1 if CDC RX was not created). It does
+  // not wait. Idle host + open port → 0 → return. Do not peek: peek+read
+  // doubles the queue ops and is the call that would block if a core ever
+  // routed it through Stream::timedPeek.
+  int avail = Serial.available();
+  if (avail <= 0) {
+    return;
+  }
+  if (avail > USB_PAGE_TURN_MAX_BYTES_PER_LOOP) {
+    avail = USB_PAGE_TURN_MAX_BYTES_PER_LOOP;
+  }
+
+  for (int i = 0; i < avail; ++i) {
+    const int raw = Serial.read();
     if (raw < 0) {
-      break;
-    }
-    const char c = static_cast<char>(raw);
-    const bool next = (c == 'n' || c == 'N');
-    const bool prev = (c == 'p' || c == 'P');
-    if (!next && !prev && c != '\r' && c != '\n') {
-      // Not a page-turn byte. Drain through the next newline (no heap) so a
-      // text line cannot sit in the RX buffer and block later n/p bytes, and
-      // so letters inside that line are not themselves page turns.
-      while (budget > 0 && Serial.available() > 0) {
-        const int extra = Serial.read();
-        --budget;
-        if (extra < 0 || extra == '\n') {
-          break;
-        }
-      }
+      // Queue emptied between available() and read(). Do not retry.
       break;
     }
 
-    Serial.read();
-    if ((!next && !prev) || injected) {
+    if (discardingLine) {
+      if (raw == '\n' || ++discarded >= USB_PAGE_TURN_MAX_DISCARD) {
+        discardingLine = false;
+        discarded = 0;
+      }
+      continue;
+    }
+
+    const char c = static_cast<char>(raw);
+    if (c == '\r' || c == '\n') {
+      continue;
+    }
+    const bool next = (c == 'n' || c == 'N');
+    const bool prev = (c == 'p' || c == 'P');
+    if (!next && !prev) {
+      discardingLine = true;
+      discarded = 1;
+      continue;
+    }
+    if (injected) {
       continue;
     }
 
@@ -672,11 +726,17 @@ static void pollUsbSerialPageTurn() {
     // Same inject path Bluetooth HID page-turners use.
     gpio.injectButtonPress(usbPageTurnButton(next));
     injected = true;
-    Serial.printf("[%lu] [DBG] [USB] Page turn %s\n", millis(), next ? "next" : "prev");
+    // printf takes the HWCDC TX lock. Skip it when the ring is full so the
+    // ack cannot be the write that stalls this iteration.
+    if (Serial.availableForWrite() >= 64) {
+      Serial.printf("[%lu] [DBG] [USB] Page turn %s\n", millis(), next ? "next" : "prev");
+    }
   }
 }
 
 void loop() {
+  ensureUsbSerialNonBlocking();
+
   static unsigned long maxLoopDuration = 0;
   const unsigned long loopStartTime = millis();
   static unsigned long lastMemPrint = 0;
