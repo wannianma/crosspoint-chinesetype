@@ -43,7 +43,26 @@ bool HalGPIO::wasAnyReleased() const {
   return inputMgr.wasAnyReleased() || (virtualRelease > 0);
 }
 
-unsigned long HalGPIO::getHeldTime() const { return inputMgr.getHeldTime(); }
+namespace {
+bool anyPhysicalButtonDown(const InputManager& inputMgr) {
+  for (uint8_t i = 0; i <= HalGPIO::BTN_POWER; ++i) {
+    if (inputMgr.isPressed(i)) {
+      return true;
+    }
+  }
+  return false;
+}
+}  // namespace
+
+unsigned long HalGPIO::getHeldTime() const {
+  // A serial/HID click is not a held button. Reporting the stale physical hold
+  // here would make the reader treat the click as a long-press (chapter skip).
+  const bool synthetic = (virtualButtonEvents | previousVirtualButtonEvents) != 0;
+  if (synthetic && !anyPhysicalButtonDown(inputMgr)) {
+    return 1;
+  }
+  return inputMgr.getHeldTime();
+}
 
 void HalGPIO::startDeepSleep() {
   // Ensure that the power button has been released to avoid immediately turning back on if you're holding it
@@ -64,10 +83,13 @@ int HalGPIO::getBatteryPercentage() const {
 
 
 void HalGPIO::injectButtonPress(uint8_t buttonIndex) {
-  // Queue the button for the next update() call
-  // This ensures the reader gets a chance to check wasPressed() 
-  // before the button is cleared
-  virtualButtonQueue |= (1 << buttonIndex);
+  if (buttonIndex > BTN_POWER) {
+    return;
+  }
+  // Queue the button for the next update() call. That frame reports
+  // wasPressed(); the frame after reports wasReleased(). Callers (USB serial
+  // page-turn, Bluetooth HID) must not poke InputManager directly.
+  virtualButtonQueue |= static_cast<uint8_t>(1u << buttonIndex);
 }
 
 void HalGPIO::clearVirtualButtons() {

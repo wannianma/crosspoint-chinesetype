@@ -15,7 +15,7 @@
 #include "FontSelectionActivity.h"
 #include "fontIds.h"
 #include "JianGuoYunSettingsActivity.h"
-#include "languageMapper.h"
+#include "LanguageMapper.h"
 #include "BluetoothSettingsActivity.h"
 
 #include "SettingsLists.h"

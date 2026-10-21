@@ -47,7 +47,10 @@ class HalGPIO {
   // Get battery percentage (range 0-100)
   int getBatteryPercentage() const;
 
-  // Virtual button injection (for Bluetooth HID)
+  // Synthetic short click (press edge, then release edge on the next update).
+  // USB serial page-turn and Bluetooth HID both call this. isPressed() stays
+  // false, and getHeldTime() is 1 ms while the click is active and no physical
+  // button is down, so long-press actions do not fire.
   void injectButtonPress(uint8_t buttonIndex);
   void clearVirtualButtons();
 
