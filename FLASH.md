@@ -47,7 +47,8 @@ The PC companion talks to the USB Serial/JTAG CDC port (`ARDUINO_USB_MODE=1`, `A
 - A trailing `\r` or `\n` is ignored, so both a raw byte and `n\n` work.
 - Repeats inside **250 ms** are consumed and dropped, including a burst sitting in the RX buffer.
 - `n` / `p` call `HalGPIO::injectButtonPress()` on the side button `MappedInputManager` uses for page forward / page back (honors the side-button swap setting). That is the same edge path (`wasPressed`, then `wasReleased` on the next `gpio.update()`) the existing Bluetooth HID page-turner uses. Chinese font loading and BLE are unchanged.
-- The `default` env also prints logs on this port (`LOG_LEVEL=2`). Ignore text lines; only the bytes above are commands. A non-command line is drained through the next newline and is not treated as page turns.
+- The `default` env also prints logs on this port (`LOG_LEVEL=2`). Ignore text lines; only the bytes above are commands. A non-command byte discards the rest of that line (through `\n`, or 64 bytes if the newline never comes). The loop reads only bytes already in the CDC RX queue, at most 32 per iteration, and does not wait for a newline.
+- USB TX timeout is **1 ms** (not 0: a 0-byte ring-buffer send reports success and the HWCDC write loop never ends). A host that holds the port open and does not read cannot stall the UI inside `Serial.printf`. Log lines, including the page-turn ack, are dropped when the 256-byte TX ring is full.
 
 ## write_flash
 
@@ -92,6 +93,6 @@ bf77cb6f18ce21a48fd14e7cf3b977dd32608446db022cf2e10e385a5b77f977  firmware.bin
 
 1. Flash, then open the USB CDC port at 115200.
 2. Open a book. Send `n`, then `p`.
-3. With this `default` build, the log line is `[DBG] [USB] Page turn next` or `prev`.
-4. The 10-second `MEM` log should not drop across these commands: the path does not allocate.
+3. With this `default` build, the log line is `[DBG] [USB] Page turn next` or `prev` when the TX ring has room. If the host is not reading, the line is skipped and the page still turns.
+4. The 10-second `MEM` log should not drop across these commands: the path does not allocate. With the port held open it also must not freeze the UI; a full TX ring costs about 1 ms and the write returns.
 5. Physical page buttons and the BLE page-turner still turn pages. A burst of `n` bytes inside 250 ms turns one page.
