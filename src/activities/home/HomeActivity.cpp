@@ -17,8 +17,9 @@
 #include "RecentBooksStore.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
+#include "tasks/FeishuTaskStore.h"
 #include "util/StringUtils.h"
-//清理字体内存
+// 清理字体内存
 #include "CustomEpdFont.h"
 
 namespace {
@@ -92,7 +93,7 @@ void HomeActivity::taskTrampoline(void* param) {
 }
 
 int HomeActivity::getMenuItemCount() const {
-  int count = 4;  // My Library, Recents, File transfer, Settings
+  int count = 5;  // Library, Recents, Feishu tasks, Wi-Fi, Settings
   if (!recentBooks.empty()) {
     count += recentBooks.size();
   }
@@ -101,9 +102,7 @@ int HomeActivity::getMenuItemCount() const {
   }
   if (hasjianguoUrl) count++;
   return count;
-
 }
-
 
 void HomeActivity::loadRecentBooks(int maxBooks) {
   recentBooks.clear();
@@ -191,16 +190,13 @@ void HomeActivity::loadRecentCovers(int coverHeight) {
 void HomeActivity::onEnter() {
   Activity::onEnter();
 
-
-
-
-
   renderingMutex = xSemaphoreCreateMutex();
   // Check if OPDS browser URL is configured
   hasOpdsUrl = strlen(SETTINGS.opdsServerUrl) > 0;
   hasjianguoUrl = strlen(SETTINGS.jgUsername) > 0;
 
   selectorIndex = 0;
+  feishuRev_ = FeishuTaskStore::instance().revision();
 
   auto metrics = UITheme::getInstance().getMetrics();
   loadRecentBooks(metrics.homeRecentBooksCount);
@@ -275,6 +271,12 @@ void HomeActivity::freeCoverBuffer() {
 }
 
 void HomeActivity::loop() {
+  const uint32_t feishuRev = FeishuTaskStore::instance().revision();
+  if (feishuRev != feishuRev_) {
+    feishuRev_ = feishuRev;
+    updateRequired = true;
+  }
+
   const bool prevPressed = mappedInput.wasPressed(MappedInputManager::Button::Up) ||
                            mappedInput.wasPressed(MappedInputManager::Button::Left);
   const bool nextPressed = mappedInput.wasPressed(MappedInputManager::Button::Down) ||
@@ -288,6 +290,7 @@ void HomeActivity::loop() {
     int menuSelectedIndex = selectorIndex - static_cast<int>(recentBooks.size());
     const int myLibraryIdx = idx++;
     const int recentsIdx = idx++;
+    const int feishuIdx = idx++;
     const int opdsLibraryIdx = hasOpdsUrl ? idx++ : -1;
     const int jgLibraryIdx = hasjianguoUrl ? idx++ : -1;
     const int fileTransferIdx = idx++;
@@ -299,6 +302,8 @@ void HomeActivity::loop() {
       onMyLibraryOpen();
     } else if (menuSelectedIndex == recentsIdx) {
       onRecentsOpen();
+    } else if (menuSelectedIndex == feishuIdx) {
+      onFeishuTasksOpen();
     } else if (menuSelectedIndex == opdsLibraryIdx) {
       onOpdsBrowserOpen();
     } else if (menuSelectedIndex == jgLibraryIdx) {
@@ -343,24 +348,25 @@ void HomeActivity::render() {
                           recentBooks, selectorIndex, coverRendered, coverBufferStored, bufferRestored,
                           std::bind(&HomeActivity::storeCoverBuffer, this));
 
-  // Build menu items dynamically
-std::vector<const char*> menuItems = {"挑选一本书", "最近阅读"};
-std::vector<UIIcon> menuIcons = {Folder, Recent};
+  // Build menu items dynamically. feishuLabel must outlive drawButtonMenu.
+  char feishuLabel[48];
+  FeishuTaskStore::instance().formatMenuLabel(feishuLabel, sizeof(feishuLabel));
+  std::vector<const char*> menuItems = {"挑选一本书", "最近阅读", feishuLabel};
+  std::vector<UIIcon> menuIcons = {Folder, Recent, pen};
 
-if (hasOpdsUrl) {
+  if (hasOpdsUrl) {
     menuItems.push_back("OPDS 浏览器");
     menuIcons.push_back(Cloudy);
-}
-if (hasjianguoUrl) {
+  }
+  if (hasjianguoUrl) {
     menuItems.push_back("坚果云");
-  menuIcons.push_back(Cloudy);
-}
+    menuIcons.push_back(Cloudy);
+  }
 
-
-menuItems.push_back("wifi功能");
-menuIcons.push_back(Wifi);
-menuItems.push_back("设置");
-menuIcons.push_back(Settings);
+  menuItems.push_back("wifi功能");
+  menuIcons.push_back(Wifi);
+  menuItems.push_back("设置");
+  menuIcons.push_back(Settings);
 
   GUI.drawButtonMenu(
       renderer,

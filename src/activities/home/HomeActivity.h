@@ -33,7 +33,8 @@ class HomeActivity final : public Activity {
   const std::function<void()> onFileTransferOpen;
   const std::function<void()> onOpdsBrowserOpen;
   const std::function<void()> onJianGuoYunOpen;
-
+  const std::function<void()> onFeishuTasksOpen;
+  uint32_t feishuRev_ = 0;
 
   static void taskTrampoline(void* param);
   [[noreturn]] void displayTaskLoop();
@@ -50,7 +51,8 @@ class HomeActivity final : public Activity {
                         const std::function<void(const std::string& path)>& onSelectBook,
                         const std::function<void()>& onMyLibraryOpen, const std::function<void()>& onRecentsOpen,
                         const std::function<void()>& onSettingsOpen, const std::function<void()>& onFileTransferOpen,
-                        const std::function<void()>& onOpdsBrowserOpen, const std::function<void()>& onJianGuoYunOpen)
+                        const std::function<void()>& onOpdsBrowserOpen, const std::function<void()>& onJianGuoYunOpen,
+                        const std::function<void()>& onFeishuTasksOpen)
       : Activity("Home", renderer, mappedInput),
         onSelectBook(onSelectBook),
         onMyLibraryOpen(onMyLibraryOpen),
@@ -58,7 +60,8 @@ class HomeActivity final : public Activity {
         onSettingsOpen(onSettingsOpen),
         onFileTransferOpen(onFileTransferOpen),
         onOpdsBrowserOpen(onOpdsBrowserOpen),
-        onJianGuoYunOpen(onJianGuoYunOpen) {}
+        onJianGuoYunOpen(onJianGuoYunOpen),
+        onFeishuTasksOpen(onFeishuTasksOpen) {}
   void onEnter() override;
   void onExit() override;
   void loop() override;

@@ -47,7 +47,11 @@ The PC companion talks to the USB Serial/JTAG CDC port (`ARDUINO_USB_MODE=1`, `A
 - A trailing `\r` or `\n` is ignored, so both a raw byte and `n\n` work.
 - Repeats inside **250 ms** are consumed and dropped, including a burst sitting in the RX buffer.
 - `n` / `p` call `HalGPIO::injectButtonPress()` on the side button `MappedInputManager` uses for page forward / page back (honors the side-button swap setting). That is the same edge path (`wasPressed`, then `wasReleased` on the next `gpio.update()`) the existing Bluetooth HID page-turner uses. Chinese font loading and BLE are unchanged.
-- The `default` env also prints logs on this port (`LOG_LEVEL=2`). Ignore text lines; only the bytes above are commands. A non-command line is drained through the next newline and is not treated as page turns.
+- The `default` env also prints logs on this port (`LOG_LEVEL=2`). Ignore text lines; only the bytes above are commands. A non-command line is drained through the next newline and is not treated as page turns. Draining continues across loop iterations, so a line longer than the per-loop read budget still cannot turn a page from an embedded `n` / `p`. See [docs/feishu-tasks.md](docs/feishu-tasks.md) for the `XTASK1` task frames that share this port: those bytes are not page turns, and `n` / `p` still work outside the task screen.
+
+## Feishu tasks
+
+Task sync uses this same CDC port. Build with `pio run -e default` and flash from a workstation using the offsets below. Do not flash a device from CI. Protocol, the host fixture test, and a credential-free push script are in [docs/feishu-tasks.md](docs/feishu-tasks.md).
 
 ## write_flash
 
