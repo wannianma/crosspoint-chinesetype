@@ -24,4 +24,7 @@ class Activity {
   virtual bool skipLoopDelay() { return false; }
   virtual bool preventAutoSleep() { return false; }
   virtual bool isReaderActivity() const { return false; }
+  // USB serial n/p injects a side-button page turn. The task screen turns this
+  // off so those bytes are not selection moves while the list is focused.
+  virtual bool wantsSerialPageTurn() const { return true; }
 };

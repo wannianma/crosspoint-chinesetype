@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <BluetoothHIDManager.h>
 #include <EpdFontLoader.h>
 #include <Epub.h>
 #include <GfxRenderer.h>
@@ -18,6 +19,7 @@
 #include "RecentBooksStore.h"
 #include "activities/boot_sleep/BootActivity.h"
 #include "activities/boot_sleep/SleepActivity.h"
+#include "activities/browser/JianGuoBrowserActivity.h"
 #include "activities/browser/OpdsBookBrowserActivity.h"
 #include "activities/home/HomeActivity.h"
 #include "activities/home/MyLibraryActivity.h"
@@ -25,15 +27,13 @@
 #include "activities/network/CrossPointWebServerActivity.h"
 #include "activities/reader/ReaderActivity.h"
 #include "activities/settings/SettingsActivity.h"
+#include "activities/tasks/FeishuTaskActivity.h"
 #include "activities/util/FullScreenMessageActivity.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
-#include "activities/browser/JianGuoBrowserActivity.h"
-
-#include <BluetoothHIDManager.h>
+#include "tasks/FeishuSerialRx.h"
+#include "tasks/FeishuTaskStore.h"
 #include "util/ButtonNavigator.h"
-
-
 
 HalDisplay display;
 HalGPIO gpio;
@@ -129,7 +129,6 @@ EpdFontFamily ui10FontFamily(&ui10RegularFont, &ui10BoldFont);
 EpdFont ui12RegularFont(&ubuntu_10_bold);
 EpdFont ui12BoldFont(&ubuntu_10_bold);
 EpdFontFamily ui12FontFamily(&ui12RegularFont, &ui12BoldFont);
-
 
 // measurement of power button press duration calibration value
 unsigned long t1 = 0;
@@ -243,7 +242,7 @@ bool saveBmpFromSavedBuffer(const char* filename) {
   const uint32_t fileSize = 14 + 40 + 8 + bmpSize;
   const uint32_t pixelDataOffset = 14 + 40 + 8;
 
-  uint8_t fileHeader[14] = {'B','M', 0,0,0,0, 0,0, 0,0, 0,0,0,0};
+  uint8_t fileHeader[14] = {'B', 'M', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
   fileHeader[2] = fileSize & 0xFF;
   fileHeader[3] = (fileSize >> 8) & 0xFF;
   fileHeader[4] = (fileSize >> 16) & 0xFF;
@@ -266,7 +265,7 @@ bool saveBmpFromSavedBuffer(const char* filename) {
   infoHeader[32] = 2;
   infoHeader[36] = 2;
 
-  const uint8_t palette[8] = {0,0,0,0, 255,255,255,0};
+  const uint8_t palette[8] = {0, 0, 0, 0, 255, 255, 255, 0};
   file.write(fileHeader, 14);
   file.write(infoHeader, 40);
   file.write(palette, 8);
@@ -353,7 +352,7 @@ bool captureGlobalScreenshot() {
   int boxY = 24;
   renderer.fillRect(boxX, boxY, boxW, boxH, false);
   renderer.drawRect(boxX, boxY, boxW, boxH, true);
-  renderer.drawCenteredText(UI_10_FONT_ID, boxY+13, "已截屏", true, EpdFontFamily::BOLD);
+  renderer.drawCenteredText(UI_10_FONT_ID, boxY + 13, "已截屏", true, EpdFontFamily::BOLD);
   renderer.displayBuffer(HalDisplay::FAST_REFRESH);
   delay(1000);
 
@@ -402,25 +401,25 @@ bool performCleanRefreshFromCurrentFrame() {
 
 // Enter deep sleep mode
 void enterDeepSleep() {
-  //等待渲染完成
+  // 等待渲染完成
   uint32_t waitStart = millis();
-  const uint32_t MAX_WAIT_TIME = 5000; // 最多等5秒
+  const uint32_t MAX_WAIT_TIME = 5000;  // 最多等5秒
   while (!APP_STATE.isRenderComplete) {
     Serial.printf("[%lu] [MAIN] Waiting for main render to complete...\n", millis());
-    vTaskDelay(100 / portTICK_PERIOD_MS); // 每100ms检查一次
-    
+    vTaskDelay(100 / portTICK_PERIOD_MS);  // 每100ms检查一次
+
     // 超时保护：避免卡死
     if (millis() - waitStart > MAX_WAIT_TIME) {
       Serial.printf("[%lu] [MAIN] Wait timeout, proceed with PNG render\n", millis());
       break;
     }
   }
-  //原逻辑
+  // 原逻辑
 
   APP_STATE.lastSleepFromReader = currentActivity && currentActivity->isReaderActivity();
   APP_STATE.saveToFile();
 
-  //bluetooth
+  // bluetooth
   try {
     auto& btMgr = BluetoothHIDManager::getInstance();
     if (btMgr.isEnabled()) {
@@ -431,7 +430,6 @@ void enterDeepSleep() {
     Serial.printf("SLP", "Could not disable Bluetooth");
   }
 
-
   exitActivity();
   enterNewActivity(new SleepActivity(renderer, mappedInputManager));
 
@@ -441,7 +439,6 @@ void enterDeepSleep() {
 
   gpio.startDeepSleep();
 }
-
 
 void onGoHome();
 void onGoToMyLibraryWithPath(const std::string& path);
@@ -486,10 +483,16 @@ void onGoToJianGuoYun() {
   enterNewActivity(new JianGuoBrowserActivity(renderer, mappedInputManager, onGoHome));
 }
 
+void onGoToFeishuTasks() {
+  exitActivity();
+  enterNewActivity(new FeishuTaskActivity(renderer, mappedInputManager, onGoHome));
+}
+
 void onGoHome() {
   exitActivity();
   enterNewActivity(new HomeActivity(renderer, mappedInputManager, onGoToReader, onGoToMyLibrary, onGoToRecentBooks,
-                                    onGoToSettings, onGoToFileTransfer, onGoToBrowser,onGoToJianGuoYun));
+                                    onGoToSettings, onGoToFileTransfer, onGoToBrowser, onGoToJianGuoYun,
+                                    onGoToFeishuTasks));
 }
 
 void setupDisplayAndFonts() {
@@ -552,6 +555,7 @@ void setup() {
   }
 
   SETTINGS.loadFromFile();
+  FeishuTaskStore::instance().loadFromFile();
   KOREADER_STORE.loadFromFile();
   UITheme::getInstance().reload();
 
@@ -575,7 +579,7 @@ void setup() {
     default:
       break;
   }
-  
+
   // First serial output only here to avoid timing inconsistencies for power button press duration verification
   Serial.printf("[%lu] [   ] Starting CrossPoint version " CROSSPOINT_VERSION "\n", millis());
 
@@ -597,7 +601,7 @@ void setup() {
   // crashed (indicated by readerActivityLoadCount > 0)
   if (APP_STATE.openEpubPath.empty() || !APP_STATE.lastSleepFromReader ||
       mappedInputManager.isPressed(MappedInputManager::Button::Back) || APP_STATE.readerActivityLoadCount > 0) {
-        Serial.printf("home1\n");
+    Serial.printf("home1\n");
     onGoHome();
   } else {
     // Clear app state to avoid getting into a boot loop if the epub doesn't load
@@ -607,7 +611,7 @@ void setup() {
     APP_STATE.saveToFile();
     Serial.printf("reader\n");
     onGoToReader(path);
-    //onGoHome();
+    // onGoHome();
   }
 
   // Ensure we're not still holding the power button before leaving setup
@@ -630,49 +634,75 @@ static uint8_t usbPageTurnButton(bool forward) {
   return swapped ? HalGPIO::BTN_DOWN : HalGPIO::BTN_UP;
 }
 
+static void handleFeishuSerialEvent(const FeishuRxResult& ev) {
+  if (ev.event == FeishuRxEvent::None || ev.event == FeishuRxEvent::PageNext || ev.event == FeishuRxEvent::PagePrev) {
+    return;
+  }
+  auto& store = FeishuTaskStore::instance();
+  auto& rx = FeishuSerialRx::instance();
+  switch (ev.event) {
+    case FeishuRxEvent::Busy:
+      store.markSyncing();
+      break;
+    case FeishuRxEvent::Fail:
+      store.markFailed(ev.message);
+      break;
+    case FeishuRxEvent::FrameOk:
+      if (!store.replaceFromViews(rx.tasks(), rx.taskCount(), rx.syncedAtUnix())) {
+        store.markFailed("无法保存");
+      }
+      break;
+    case FeishuRxEvent::FrameBad:
+      store.markFailed(ev.message[0] != '\0' ? ev.message : "同步失败");
+      break;
+    case FeishuRxEvent::None:
+    case FeishuRxEvent::PageNext:
+    case FeishuRxEvent::PagePrev:
+      break;
+  }
+}
+
 static void pollUsbSerialPageTurn() {
   static unsigned long lastInjectMs = 0;
   static bool haveInjected = false;
   bool injected = false;
 
+  auto& rx = FeishuSerialRx::instance();
+  const bool allowPageTurn = currentActivity == nullptr || currentActivity->wantsSerialPageTurn();
+  rx.setPageTurnEnabled(allowPageTurn);
+
   // Bound the drain so a flooded CDC RX buffer cannot stall the UI loop.
+  // FeishuSerialRx keeps line/frame state across calls, so an XTASK1 frame or
+  // a text line split over loops is not mistaken for n/p. Page turns stay
+  // idle-only and are still debounced here.
   for (int budget = 64; budget > 0 && Serial.available() > 0; --budget) {
-    const int raw = Serial.peek();
+    const int raw = Serial.read();
     if (raw < 0) {
       break;
     }
-    const char c = static_cast<char>(raw);
-    const bool next = (c == 'n' || c == 'N');
-    const bool prev = (c == 'p' || c == 'P');
-    if (!next && !prev && c != '\r' && c != '\n') {
-      // Not a page-turn byte. Drain through the next newline (no heap) so a
-      // text line cannot sit in the RX buffer and block later n/p bytes, and
-      // so letters inside that line are not themselves page turns.
-      while (budget > 0 && Serial.available() > 0) {
-        const int extra = Serial.read();
-        --budget;
-        if (extra < 0 || extra == '\n') {
-          break;
-        }
+    const FeishuRxResult ev = rx.feed(static_cast<uint8_t>(raw), millis());
+    if (ev.event == FeishuRxEvent::PageNext || ev.event == FeishuRxEvent::PagePrev) {
+      if (injected) {
+        continue;
       }
-      break;
+      const unsigned long now = millis();
+      if (haveInjected && (now - lastInjectMs) < USB_PAGE_TURN_DEBOUNCE_MS) {
+        continue;
+      }
+      haveInjected = true;
+      lastInjectMs = now;
+      const bool next = ev.event == FeishuRxEvent::PageNext;
+      gpio.injectButtonPress(usbPageTurnButton(next));
+      injected = true;
+      Serial.printf("[%lu] [DBG] [USB] Page turn %s\n", millis(), next ? "next" : "prev");
+    } else {
+      handleFeishuSerialEvent(ev);
     }
+  }
 
-    Serial.read();
-    if ((!next && !prev) || injected) {
-      continue;
-    }
-
-    const unsigned long now = millis();
-    if (haveInjected && (now - lastInjectMs) < USB_PAGE_TURN_DEBOUNCE_MS) {
-      continue;
-    }
-    haveInjected = true;
-    lastInjectMs = now;
-    // Same inject path Bluetooth HID page-turners use.
-    gpio.injectButtonPress(usbPageTurnButton(next));
-    injected = true;
-    Serial.printf("[%lu] [DBG] [USB] Page turn %s\n", millis(), next ? "next" : "prev");
+  handleFeishuSerialEvent(rx.tick(millis()));
+  if (FeishuTaskStore::instance().syncTimedOut(millis())) {
+    FeishuTaskStore::instance().markFailed("主机无响应");
   }
 }
 
@@ -684,8 +714,6 @@ void loop() {
   static unsigned long powerLastReleaseMs = 0;
   static uint8_t pendingShortPwrAction = CrossPointSettings::SHORT_PWRBTN::IGNORE;
 
-
-
   constexpr unsigned long POWER_DOUBLE_CLICK_WINDOW_MS = 350;
 
   gpio.update();
@@ -694,7 +722,7 @@ void loop() {
   // are already dropped inside the poll.
   pollUsbSerialPageTurn();
 
-    // Check for Bluetooth inactivity timeouts and auto-reconnect
+  // Check for Bluetooth inactivity timeouts and auto-reconnect
   try {
     BluetoothHIDManager::getInstance().updateActivity();
     BluetoothHIDManager::getInstance().checkAutoReconnect();
@@ -713,9 +741,9 @@ void loop() {
   // Check for any user activity (button press or release) or active background work
   static unsigned long lastActivityTime = millis();
   // Check for physical button presses, virtual button presses, or activity prevention
-  bool hasActivity = gpio.wasAnyPressed() || gpio.wasAnyReleased() || 
-                     (currentActivity && currentActivity->preventAutoSleep());
-  
+  bool hasActivity =
+      gpio.wasAnyPressed() || gpio.wasAnyReleased() || (currentActivity && currentActivity->preventAutoSleep());
+
   // Also check for recent BLE activity to prevent power sleep during BLE use
   try {
     const auto& btMgr = BluetoothHIDManager::getInstance();
@@ -728,7 +756,7 @@ void loop() {
   } catch (...) {
     // Ignore BLE check errors
   }
-  
+
   if (hasActivity) {
     lastActivityTime = millis();  // Reset inactivity timer
   }
@@ -795,19 +823,18 @@ void loop() {
           shortPwrName = "忽略";
           break;
       }
-      Serial.printf("[%lu] [PWR] Double-click: short power action switched to %s\n", nowMs,
-                    shortPwrName);
-        // ============================
-        int boxW = 180, boxH = 44;
-        int boxX = (renderer.getScreenWidth() - boxW) / 2;
-        int boxY = 24;
-        renderer.fillRect(boxX, boxY, boxW, boxH, false);
-        renderer.drawRect(boxX, boxY, boxW, boxH, true);
-        char switchMsg[64];
-        snprintf(switchMsg, sizeof(switchMsg), "已切换为%s", shortPwrName);
-        renderer.drawCenteredText(UI_10_FONT_ID, boxY + 13, switchMsg, true, EpdFontFamily::BOLD);
-        renderer.displayBuffer(HalDisplay::FAST_REFRESH);
-        delay(1000);
+      Serial.printf("[%lu] [PWR] Double-click: short power action switched to %s\n", nowMs, shortPwrName);
+      // ============================
+      int boxW = 180, boxH = 44;
+      int boxX = (renderer.getScreenWidth() - boxW) / 2;
+      int boxY = 24;
+      renderer.fillRect(boxX, boxY, boxW, boxH, false);
+      renderer.drawRect(boxX, boxY, boxW, boxH, true);
+      char switchMsg[64];
+      snprintf(switchMsg, sizeof(switchMsg), "已切换为%s", shortPwrName);
+      renderer.drawCenteredText(UI_10_FONT_ID, boxY + 13, switchMsg, true, EpdFontFamily::BOLD);
+      renderer.displayBuffer(HalDisplay::FAST_REFRESH);
+      delay(1000);
     } else {
       powerShortClickPending = true;
       powerLastReleaseMs = nowMs;
@@ -820,8 +847,7 @@ void loop() {
     powerShortClickPending = false;
 
     if (pendingShortPwrAction == CrossPointSettings::SHORT_PWRBTN::FULL_REFRESH) {
-
-      //还是先改回半刷
+      // 还是先改回半刷
       renderer.displayBuffer(HalDisplay::HALF_REFRESH);
     } else if (pendingShortPwrAction == CrossPointSettings::SHORT_PWRBTN::SCREENSHOT) {
       captureGlobalScreenshot();

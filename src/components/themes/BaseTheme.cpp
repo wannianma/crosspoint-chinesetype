@@ -613,7 +613,10 @@ void BaseTheme::drawButtonMenu(GfxRenderer& renderer, Rect rect, int buttonCount
                         rect.width - BaseMetrics::values.contentSidePadding * 2, BaseMetrics::values.menuRowHeight);
     }
 
-    const char* label = buttonLabel(i).c_str();
+    // Keep the temporary alive. buttonLabel() returns by value, and a label
+    // longer than the small-string buffer (the Feishu badge) would dangle.
+    const std::string labelStr = buttonLabel(i);
+    const char* label = labelStr.c_str();
     const int textWidth = renderer.getTextWidth(UI_10_FONT_ID, label);
     const int textX = rect.x + (rect.width - textWidth) / 2;
     const int lineHeight = renderer.getLineHeight(UI_10_FONT_ID);
