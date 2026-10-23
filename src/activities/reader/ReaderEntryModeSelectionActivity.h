@@ -34,7 +34,7 @@ class ReaderEntryModeSelectionActivity final : public ActivityWithSubactivity {
                                    {Mode::BOOKMARK, "书签"},
                                    {Mode::AUTO_PAGE_TURN, "自动翻页"},
                                    {Mode::AUTO_PAGE_TURN_TIME, "自动翻页时间"},
-                                   {Mode::BLUETOOTH, "蓝牙设置"}};
+                                   {Mode::BLUETOOTH, "输入设备"}};
   int selectedIndex = 0;
   bool updateRequired = false;
   TaskHandle_t displayTaskHandle = nullptr;
