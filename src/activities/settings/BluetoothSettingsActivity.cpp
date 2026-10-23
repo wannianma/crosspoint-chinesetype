@@ -526,7 +526,7 @@ void BluetoothSettingsActivity::renderMainMenu() {
 
   renderer.clearScreen();
 
-  renderer.drawCenteredText(UI_12_FONT_ID, 15, "蓝牙设置", true, EpdFontFamily::BOLD);
+  renderer.drawCenteredText(UI_12_FONT_ID, 15, "输入设备", true, EpdFontFamily::BOLD);
 
   std::string statusLine;
   if (btMgr) {

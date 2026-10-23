@@ -60,6 +60,7 @@ void SettingsActivity::onEnter() {
 
   // Append device-only ACTION items
   controlsSettings.insert(controlsSettings.begin(), SettingInfo::Action("Remap Front Buttons"));
+  controlsSettings.push_back(SettingInfo::Action("输入设备"));
   systemSettings.push_back(SettingInfo::Action("KOReader Sync"));
   systemSettings.push_back(SettingInfo::Action("OPDS Browser"));
   systemSettings.push_back(SettingInfo::Action("坚果云信息配置"));
@@ -257,7 +258,7 @@ void SettingsActivity::toggleCurrentSetting() {
         updateRequired = true;
       }));
       xSemaphoreGive(renderingMutex);
-      } else if (strcmp(setting.name, "bluetooth") == 0) {
+      } else if (strcmp(setting.name, "输入设备") == 0) {
       xSemaphoreTake(renderingMutex, portMAX_DELAY);
       exitActivity();
       enterNewActivity(new BluetoothSettingsActivity(renderer, mappedInput, [this] {

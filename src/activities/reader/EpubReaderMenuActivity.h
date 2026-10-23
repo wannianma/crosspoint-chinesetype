@@ -57,7 +57,7 @@ class EpubReaderMenuActivity final : public ActivityWithSubactivity {
       {MenuAction::SELECT_CHAPTER, "进入章节目录"}, {MenuAction::ROTATE_SCREEN, "阅读方向"},
       {MenuAction::BOOKMARK_LIST, "书签列表"},        {MenuAction::ADD_BOOKMARK, "添加书签"},
       {MenuAction::GO_TO_PERCENT, "直达进度 %"},      {MenuAction::AUTO_PAGE_TURN_TOGGLE, "自动翻页"},
-      {MenuAction::AUTO_PAGE_TURN_TIME, "自动翻页时间"}, {MenuAction::BLUETOOTH, "蓝牙设置"},
+      {MenuAction::AUTO_PAGE_TURN_TIME, "自动翻页时间"}, {MenuAction::BLUETOOTH, "输入设备"},
       {MenuAction::GO_HOME, "返回主页"},
       {MenuAction::SYNC, "进度同步(koreader)"},           {MenuAction::DELETE_CACHE, "清理缓存"},
       {MenuAction::SYNCY, "进度同步(开源阅读)"}};
