@@ -4,6 +4,7 @@
 #include <SDCardManager.h>
 #include <Serialization.h>
 
+#include <climits>
 #include <cstring>
 
 #include "fontIds.h"
@@ -374,6 +375,8 @@ float CrossPointSettings::getReaderLineCompression() const {
   }
 }
 
+bool CrossPointSettings::isAutoSleepDisabled() const { return sleepTimeout == SLEEP_NEVER; }
+
 unsigned long CrossPointSettings::getSleepTimeoutMs() const {
   switch (sleepTimeout) {
     case SLEEP_1_MIN:
@@ -387,6 +390,9 @@ unsigned long CrossPointSettings::getSleepTimeoutMs() const {
       return 15UL * 60 * 1000;
     case SLEEP_30_MIN:
       return 30UL * 60 * 1000;
+    case SLEEP_NEVER:
+      // Callers must check isAutoSleepDisabled() and skip the timeout.
+      return ULONG_MAX;
   }
 }
 

@@ -875,8 +875,8 @@ void BluetoothHIDManager::updateActivity() {
   for (auto& device : _connectedDevices) {
     if (device.lastActivityTime > 0) {
       unsigned long inactiveTime = now - device.lastActivityTime;
-      //和休眠时间绑定
-      if (inactiveTime >= SETTINGS.getSleepTimeoutMs()) {
+      // 和休眠时间绑定；从不休眠时不断开已连接的蓝牙设备
+      if (!SETTINGS.isAutoSleepDisabled() && inactiveTime >= SETTINGS.getSleepTimeoutMs()) {
         Serial.printf("BT Device %s inactive for %lu ms, disconnecting", device.address.c_str(), inactiveTime);
         disconnectFromDevice(device.address);
         break;  // List modified, exit loop
