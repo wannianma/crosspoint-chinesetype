@@ -100,6 +100,7 @@ class CrossPointSettings {
     SLEEP_10_MIN = 2,
     SLEEP_15_MIN = 3,
     SLEEP_30_MIN = 4,
+    SLEEP_NEVER = 5,
     SLEEP_TIMEOUT_COUNT
   };
 
@@ -234,6 +235,8 @@ uint8_t extraline = 1;
   bool loadFromFile();
 
   float getReaderLineCompression() const;
+  // True when 休眠时间 is 从不休眠. Power-button sleep is unchanged.
+  bool isAutoSleepDisabled() const;
   unsigned long getSleepTimeoutMs() const;
   int getRefreshFrequency() const;
 };

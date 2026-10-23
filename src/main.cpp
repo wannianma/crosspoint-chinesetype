@@ -733,12 +733,14 @@ void loop() {
     lastActivityTime = millis();  // Reset inactivity timer
   }
 
-  const unsigned long sleepTimeoutMs = SETTINGS.getSleepTimeoutMs();
-  if (millis() - lastActivityTime >= sleepTimeoutMs) {
-    Serial.printf("[%lu] [SLP] Auto-sleep triggered after %lu ms of inactivity\n", millis(), sleepTimeoutMs);
-    enterDeepSleep();
-    // This should never be hit as `enterDeepSleep` calls esp_deep_sleep_start
-    return;
+  if (!SETTINGS.isAutoSleepDisabled()) {
+    const unsigned long sleepTimeoutMs = SETTINGS.getSleepTimeoutMs();
+    if (millis() - lastActivityTime >= sleepTimeoutMs) {
+      Serial.printf("[%lu] [SLP] Auto-sleep triggered after %lu ms of inactivity\n", millis(), sleepTimeoutMs);
+      enterDeepSleep();
+      // This should never be hit as `enterDeepSleep` calls esp_deep_sleep_start
+      return;
+    }
   }
 
   if (gpio.isPressed(HalGPIO::BTN_POWER) && gpio.getHeldTime() > SETTINGS.getPowerButtonDuration()) {

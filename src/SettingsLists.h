@@ -61,7 +61,7 @@ inline std::vector<SettingInfo> getSettingsList() {
 
       // --- System ---
       SettingInfo::Enum("休眠时间", &CrossPointSettings::sleepTimeout,
-                        {"1 min", "5 min", "10 min", "15 min", "30 min"}, "sleepTimeout", "System"),
+                        {"1 min", "5 min", "10 min", "15 min", "30 min", "从不休眠"}, "sleepTimeout", "System"),
       SettingInfo::Toggle("bluetoothEnabled", &CrossPointSettings::bluetoothEnabled, "bluetoothEnabled", "System"),
 
       // --- KOReader Sync (web-only, uses KOReaderCredentialStore) ---
